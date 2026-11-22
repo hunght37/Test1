@@ -1,0 +1,111 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pg_trgm]
+}
+
+enum MediaType {
+  MOVIE
+  TV
+  ANIME
+}
+
+enum ReleaseLanguage {
+  VI
+  VI_EN
+}
+
+enum LinkCategory {
+  SUBTITLE
+  RAW_MUX
+}
+
+model MediaItem {
+  id               String    @id @default(cuid())
+  tmdbId           Int
+  imdbId           String?
+  type             MediaType
+  title            String
+  originalTitle    String
+  altTitles        String?
+  slug             String    @unique
+  searchNormalized String
+  releaseYear      Int?
+  overview         String?   @db.Text
+  posterPath       String?
+  backdropPath     String?
+  genres           String[]  @default([])
+  isFeatured       Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  episodes Episode[]
+  releases ReleaseEntry[]
+
+  @@unique([tmdbId, type])
+  @@index([searchNormalized(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([updatedAt(sort: Desc)])
+}
+
+model Episode {
+  id            String   @id @default(cuid())
+  mediaId       String
+  seasonNumber  Int
+  episodeNumber Int
+  title         String?
+
+  media    MediaItem      @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  releases ReleaseEntry[]
+
+  @@unique([mediaId, seasonNumber, episodeNumber])
+}
+
+model ReleaseEntry {
+  id          String          @id @default(cuid())
+  mediaId     String
+  episodeId   String?
+  title       String
+  releaseTag  String
+  language    ReleaseLanguage @default(VI)
+  notes       String?         @db.Text
+  isPublished Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  media   MediaItem      @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  episode Episode?       @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  links   ExternalLink[]
+
+  @@index([mediaId, isPublished, createdAt(sort: Desc)])
+}
+
+model ExternalLink {
+  id           String       @id @default(cuid())
+  releaseId    String
+  category     LinkCategory
+  provider     String
+  url          String
+  quality      String?
+  fileSizeText String?
+  isAlive      Boolean      @default(true)
+  clickCount   Int          @default(0)
+  createdAt    DateTime     @default(now())
+
+  release ReleaseEntry   @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  reports BrokenReport[]
+}
+
+model BrokenReport {
+  id        String   @id @default(cuid())
+  linkId    String
+  message   String?
+  isHandled Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  link ExternalLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+}
